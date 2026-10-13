@@ -1,0 +1,15 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  background: #020510;
+}
+
+body {
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}

@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Neon Racer 3D</title>
+  <style>
+    :root {
+      --bg-1: #070b19;
+      --bg-2: #0d1430;
+      --panel: rgba(12, 18, 38, 0.82);
+      --panel-strong: rgba(16, 22, 48, 0.94);
+      --accent: #68f0ff;
+      --accent-2: #ff4ec7;
+      --gold: #ffd166;
+      --good: #82ffb1;
+      --danger: #ff6868;
+      --text: #edf5ff;
+      --muted: #9bb8da;
+      --shadow: rgba(8, 10, 18, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #0d1533 0%, #090d18 35%, #05070d 100%);
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+      overscroll-behavior: none;
+    }
+
+    #app {
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow: hidden;
+      transform-origin: 0 0;
+      background: #050914;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .screen.active { display: block; }
+
+    #scr-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #0b1329 0%, #0b0e1b 100%);
+    }
+
+    .loading-panel {
+      position: relative;
+      width: 280px;
+      padding: 28px 22px 18px;
+      border-radius: 24px;
+      background: rgba(11, 19, 40, 0.72);
+      box-shadow: 0 0 28px rgba(104, 240, 255, 0.25);
+      border: 1px solid rgba(104, 240, 255, 0.28);
+      backdrop-filter: blur(8px);
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      margin-bottom: 18px;
+      text-shadow: 0 0 20px rgba(104, 240, 255, 0.5);
+    }
+
+    .loading-bar {
+      position: relative;
+      width: 100%;
+      height: 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+      margin-bottom: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .loading-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 100%;
+      border-radius: inherit;
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform 0.22s ease;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--gold));
+      box-shadow: 0 0 20px rgba(104, 240, 255, 0.8);
+    }
+
+    #load-pct {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+      color: var(--gold);
+    }
+
+    #load-text {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 38px;
+    }
+
+    #boot-error {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 100;
+      background: rgba(9, 11, 19, 0.86);
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 22px;
+    }
+
+    #boot-error.show { display: flex; }
+
+    .boot-box {
+      width: min(300px, 80vw);
+      background: rgba(18, 24, 45, 0.92);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px;
+      padding: 24px 20px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    #boot-error-text {
+      color: #fff;
+      font-size: 16px;
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+
+    .retry-btn, .action-btn, .chip {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      border-radius: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .retry-btn, .action-btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #04111d;
+      padding: 12px 18px;
+      box-shadow: 0 10px 22px rgba(104, 240, 255, 0.25);
+    }
+
+    .retry-btn:active, .action-btn:active, .chip:active { transform: scale(0.98); }
+
+    #scr-menu {
+      background: radial-gradient(circle at 50% 15%, rgba(104, 240, 255, 0.2), transparent 20%),
+                  linear-gradient(180deg, #091223 0%, #050915 100%);
+    }
+
+    .menu-wrap {
+      position: absolute;
+      inset: 0;
+      padding: 28px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .title {
+      text-align: center;
+      margin-top: 30px;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 0.9;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 900;
+      background: linear-gradient(90deg, #dffaff 0%, var(--accent) 30%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 0 24px rgba(104, 240, 255, 0.2);
+    }
+
+    .title .subtitle {
+      margin-top: 8px;
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .menu-grid {
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      margin-top: 14px;
+    }
+
+    .menu-btn {
+      width: 100%;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid rgba(104, 240, 255, 0.22);
+      background: linear-gradient(180deg, rgba(17, 29, 48, 0.9), rgba(10, 15, 26, 0.95));
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 14px 28px rgba(0, 0, 0, 0.2);
+    }
+
+    .menu-btn.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #04111d;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 18px 34px rgba(104, 240, 255, 0.3);
+    }
+
+    .hud-row {
+      position: absolute;
+      inset: 14px 14px auto 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      z-index: 8;
+    }
+
+    .hud-block {
+      background: rgba(8, 12, 23, 0.55);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 7px 10px;
+      backdrop-filter: blur(6px);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--text);
+      min-width: 94px;
+      text-align: center;
+    }
+
+    .hud-block strong {
+      display: block;
+      font-size: 18px;
+      color: var(--gold);
+      letter-spacing: 0;
+      margin-top: 2px;
+    }
+
+    .game-ui {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 6;
+      display: none;
+    }
+
+    .game-ui.visible { display: block; }
+
+    .controls { position: absolute; inset: auto 0 12px 0; pointer-events: none; }
+    .touch-pad {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 170px;
+      pointer-events: none;
+    }
+    .touch-btn {
+      position: absolute;
+      bottom: 14px;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(9, 14, 26, 0.45);
+      color: var(--text);
+      font-size: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      box-shadow: 0 16px 30px rgba(0,0,0,0.24);
+    }
+    .touch-btn.left { left: 16px; }
+    .touch-btn.right { right: 16px; }
+    .touch-btn:active { transform: scale(0.96); }
+
+    #scr-game {
+      background: linear-gradient(180deg, #09121f 0%, #060b14 100%);
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #050a14;
+    }
+
+    .overlay-panel {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      transform: translate(-50%, -50%);
+      width: min(300px, 82vw);
+      padding: 22px 18px 18px;
+      border-radius: 20px;
+      background: rgba(10, 14, 25, 0.85);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 26px 50px rgba(0,0,0,0.38);
+      backdrop-filter: blur(8px);
+      text-align: center;
+      display: none;
+      z-index: 20;
+    }
+
+    .overlay-panel.visible { display: block; }
+
+    .overlay-title {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 10px;
+    }
+
+    .overlay-text {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .overlay-actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.13);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="scr-loading" class="screen active">
+      <div class="loading-panel">
+        <div class="logo">Neon Racer</div>
+        <div class="loading-bar"><div class="loading-fill" id="load-fill"></div></div>
+        <div id="load-pct">0%</div>
+        <div id="load-text">Подготовка трассы...</div>
+      </div>
+      <div id="boot-error">
+        <div class="boot-box">
+          <div id="boot-error-text">Ошибка запуска игры.</div>
+          <button class="retry-btn" type="button" onclick="location.reload()">Повторить</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="scr-menu" class="screen">
+      <div class="menu-wrap">
+        <div class="title">
+          <h1>Neon<br>Racer</h1>
+          <div class="subtitle">3D night sprint</div>
+        </div>
+
+        <div class="menu-grid">
+          <button class="menu-btn primary" id="start-race">Старт</button>
+          <button class="menu-btn" id="garage-btn">Гараж</button>
+          <button class="menu-btn" id="how-btn">Как играть</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="scr-game" class="screen">
+      <canvas id="game-canvas" width="390" height="700"></canvas>
+
+      <div class="hud-row">
+        <div class="hud-block">Скорость<strong id="speed-value">0</strong></div>
+        <div class="hud-block">Очки<strong id="score-value">0</strong></div>
+      </div>
+
+      <div class="game-ui visible" id="game-ui">
+        <div class="controls">
+          <div class="touch-pad">
+            <button class="touch-btn left" id="left-btn" type="button">◀</button>
+            <button class="touch-btn right" id="right-btn" type="button">▶</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="game-over" class="overlay-panel" role="dialog" aria-modal="true">
+        <div class="overlay-title">Crash!</div>
+        <div class="overlay-text">Слишком много ударов по трассе. Попробуй ещё раз.</div>
+        <div class="overlay-actions">
+          <button class="action-btn" id="restart-btn" type="button">Заново</button>
+          <button class="chip" id="menu-btn" type="button">Меню</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.BOOT = { done: false };
+    function bootError(msg) {
+      if (window.BOOT.done) return;
+      var b = document.getElementById('boot-error');
+      if (!b) return;
+      document.getElementById('boot-error-text').textContent = msg;
+      b.classList.add('show');
+    }
+    window.addEventListener('error', function (e) {
+      var t = e.target, dir = location.pathname.replace(/[^\/]*$/, '');
+      if (t && t.tagName === 'SCRIPT' && t.hasAttribute('data-game')) {
+        bootError('Не загрузился файл игры. Проверьте интернет.');
+      } else if (e.message && e.filename && e.filename.indexOf(dir) >= 0) {
+        console.error('[Game]', e.message, e.filename, e.lineno, e.colno);
+        bootError('Ошибка запуска игры.');
+      }
+    }, true);
+  </script>
+
+  <script data-game src="js/core.js"></script>
+  <script data-game src="js/data.js"></script>
+  <script data-game src="js/audio.js"></script>
+  <script data-game src="js/loader.js"></script>
+  <script data-game src="js/game.js"></script>
+  <script data-game src="js/ui.js"></script>
+  <script data-game src="js/main.js"></script>
+</body>
+</html>
