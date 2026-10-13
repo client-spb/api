@@ -1,329 +1,309 @@
 class RacingGame {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
     this.trackIndex = 0;
     this.running = false;
     this.distance = 0;
     this.score = 0;
-    this.speed = 90;
-    this.maxSpeed = 350;
-    this.lane = 0;
-    this.targetLane = 0;
+    this.speed = 28;
+    this.maxSpeed = 70;
+    this.laneIndex = 1;
+    this.targetLaneIndex = 1;
+    this.lanePositions = [-4, 0, 4];
     this.obstacles = [];
-    this.particles = [];
-    this.roadScroll = 0;
-    this.spawnTimer = 0.8;
+    this.pickups = [];
+    this.spawnTimer = 1.1;
+    this.pickupTimer = 2.4;
     this.lastTime = performance.now();
     this.onCrash = null;
+    this.rafId = 0;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x040a12);
+    this.scene.fog = new THREE.Fog(0x040a12, 16, 110);
+
+    this.camera = new THREE.PerspectiveCamera(58, canvas.width / canvas.height, 0.1, 200);
+    this.camera.position.set(0, 5.5, 12);
+    this.camera.lookAt(0, 1.6, -35);
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setSize(canvas.width, canvas.height, false);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    this.initLights();
+    this.buildTrack();
+    this.buildPlayer();
+    this.buildBackdrop();
+    this.reset();
   }
 
-  setTrack(index) {
-    this.trackIndex = index % TRACKS.length;
+  initLights() {
+    const ambient = new THREE.AmbientLight(0x7ec8ff, 1.25);
+    this.scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xfff4d6, 1.1);
+    sun.position.set(0, 18, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    this.scene.add(sun);
+
+    const neon = new THREE.PointLight(0x68f0ff, 25, 130, 2);
+    neon.position.set(0, 6, 3);
+    this.scene.add(neon);
+  }
+
+  buildBackdrop() {
+    const stars = new THREE.Group();
+    for (let i = 0; i < 120; i += 1) {
+      const s = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 8, 8),
+        new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? 0xffd166 : 0x9ae9ff })
+      );
+      s.position.set(rand(-45, 45), rand(10, 28), rand(-120, -20));
+      stars.add(s);
+    }
+    this.scene.add(stars);
+  }
+
+  buildTrack() {
+    this.trackGroup = new THREE.Group();
+    this.scene.add(this.trackGroup);
+
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x121a2a, emissive: 0x0a0f18, metalness: 0.2, roughness: 0.85 });
+    const glowMat = new THREE.MeshStandardMaterial({ color: 0x68f0ff, emissive: 0x2fe0ff, metalness: 0.6, roughness: 0.3 });
+
+    for (let i = 0; i < 18; i += 1) {
+      const segment = new THREE.Group();
+      const road = new THREE.Mesh(new THREE.BoxGeometry(18, 0.5, 18), roadMat);
+      road.position.y = -0.35;
+      road.receiveShadow = true;
+      segment.add(road);
+
+      const line = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 3.8), new THREE.MeshStandardMaterial({ color: 0xf7f0a8, emissive: 0xffd166 }));
+      line.position.set(0, 0.1, 0);
+      segment.add(line);
+
+      const leftRail = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.5, 18), glowMat);
+      leftRail.position.set(-8.5, 0.2, 0);
+      const rightRail = leftRail.clone();
+      rightRail.position.x = 8.5;
+      segment.add(leftRail, rightRail);
+
+      segment.position.z = -i * 18;
+      this.trackGroup.add(segment);
+    }
+
+    const laneGlowGeo = new THREE.BoxGeometry(0.18, 0.2, 18);
+    const laneGlowMat = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xffd166, emissiveIntensity: 1.5 });
+    for (let i = 0; i < 3; i += 1) {
+      const laneGlow = new THREE.Mesh(laneGlowGeo, laneGlowMat);
+      laneGlow.position.set(-3.8 + i * 3.8, 0.18, -40);
+      this.trackGroup.add(laneGlow);
+    }
+  }
+
+  buildPlayer() {
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x68f0ff, emissive: 0x2fe0ff, metalness: 0.4, roughness: 0.35 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x081720, emissive: 0x0b1830 });
+
+    const car = new THREE.Group();
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.9, 4.2), bodyMat);
+    chassis.castShadow = true;
+    chassis.position.y = 0.8;
+    car.add(chassis);
+
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.7, 2.2), accentMat);
+    cabin.position.set(0, 1.35, -0.2);
+    cabin.castShadow = true;
+    car.add(cabin);
+
+    const light = new THREE.PointLight(0x68f0ff, 12, 18, 2);
+    light.position.set(0, 1.2, 2.5);
+    car.add(light);
+
+    car.position.set(0, 0, 2.5);
+    this.scene.add(car);
+    this.player = car;
   }
 
   reset() {
     this.distance = 0;
     this.score = 0;
-    this.speed = 90;
-    this.lane = 0;
-    this.targetLane = 0;
-    this.obstacles = [];
-    this.particles = [];
-    this.roadScroll = 0;
-    this.spawnTimer = 0.9;
+    this.speed = 28;
+    this.maxSpeed = 70;
+    this.laneIndex = 1;
+    this.targetLaneIndex = 1;
+    this.spawnTimer = 1.1;
+    this.pickupTimer = 2.5;
     this.lastTime = performance.now();
+
+    this.obstacles.forEach((item) => this.scene.remove(item.mesh));
+    this.pickups.forEach((item) => this.scene.remove(item.mesh));
+    this.obstacles = [];
+    this.pickups = [];
+
+    this.player.position.x = 0;
+    this.player.rotation.y = 0;
+    this.camera.position.x = 0;
+    this.camera.position.y = 5.5;
+    this.camera.position.z = 12;
+    this.camera.lookAt(0, 1.6, -35);
+
+    if (document.getElementById('score-value')) {
+      document.getElementById('score-value').textContent = '0';
+    }
+    if (document.getElementById('speed-value')) {
+      document.getElementById('speed-value').textContent = '0';
+    }
   }
 
   start() {
     this.reset();
     this.running = true;
-    this.runLoop();
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = requestAnimationFrame(() => this.loop());
     if (document.getElementById('game-over')) {
       document.getElementById('game-over').classList.remove('visible');
     }
   }
 
-  runLoop() {
+  loop() {
     if (!this.running) return;
     const now = performance.now();
     const dt = Math.min((now - this.lastTime) / 1000, 0.033);
     this.lastTime = now;
     this.update(dt);
     this.render();
-    requestAnimationFrame(() => this.runLoop());
+    this.rafId = requestAnimationFrame(() => this.loop());
   }
 
   shiftLane(dir) {
     if (!this.running) return;
-    this.targetLane = clamp(this.targetLane + dir, -1, 1);
+    this.targetLaneIndex = clamp(this.targetLaneIndex + dir, 0, 2);
     AudioManager.beepMove();
+  }
+
+  spawnObstacle() {
+    const lane = Math.floor(Math.random() * 3);
+    const obstacle = new THREE.Mesh(
+      new THREE.BoxGeometry(2.1, 1.2, 2.9),
+      new THREE.MeshStandardMaterial({
+        color: ['#ff5ea8', '#68f0ff', '#7cf7b3'][Math.floor(Math.random() * 3)],
+        emissive: 0x142e3d,
+        metalness: 0.4,
+        roughness: 0.3
+      })
+    );
+    obstacle.castShadow = true;
+    obstacle.position.set(this.lanePositions[lane], 1.2, -60 - Math.random() * 30);
+    obstacle.userData = { lane, type: 'enemy' };
+    this.scene.add(obstacle);
+    this.obstacles.push({ mesh: obstacle, lane, type: 'enemy' });
+  }
+
+  spawnPickup() {
+    const lane = Math.floor(Math.random() * 3);
+    const pickup = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.9, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xffd166,
+        emissive: 0xffd166,
+        emissiveIntensity: 1.4,
+        metalness: 0.2,
+        roughness: 0.3
+      })
+    );
+    pickup.position.set(this.lanePositions[lane], 1.8, -60 - Math.random() * 30);
+    pickup.userData = { lane, type: 'pickup' };
+    this.scene.add(pickup);
+    this.pickups.push({ mesh: pickup, lane, type: 'pickup' });
   }
 
   triggerCrash() {
     this.running = false;
     this.score = Math.max(0, this.score);
-    const scoreEl = document.getElementById('score-value');
-    if (scoreEl) {
-      scoreEl.textContent = String(this.score);
-    }
     const panel = document.getElementById('game-over');
     if (panel) {
       panel.classList.add('visible');
+      panel.querySelector('.overlay-text').textContent = 'Результат: ' + this.score + ' очков. Сыграй ещё раз!';
     }
     if (this.onCrash) this.onCrash(this.score);
     AudioManager.beepCrash();
   }
 
-  spawnObstacle() {
-    const kindRoll = Math.random();
-    const lane = Math.floor(Math.random() * 3) - 1;
-    const obstacle = {
-      lane,
-      z: 1.75 + Math.random() * 1.5,
-      kind: kindRoll < 0.18 ? 'boost' : 'car',
-      color: kindRoll < 0.18 ? '#ffd166' : ['#ff5ea8', '#68f0ff', '#7cf7b3'][Math.floor(Math.random() * 3)],
-      phase: Math.random() * Math.PI * 2
-    };
-    this.obstacles.push(obstacle);
-  }
-
   update(dt) {
-    this.speed = clamp(this.speed + dt * 20, 85, this.maxSpeed);
-    this.distance += dt * this.speed * 0.38;
-    this.score = Math.floor(this.distance * 2.6);
-    this.lane += (this.targetLane - this.lane) * Math.min(1, dt * 12);
-    this.roadScroll += dt * this.speed * 0.55;
+    const targetX = this.lanePositions[this.targetLaneIndex];
+    this.player.position.x += (targetX - this.player.position.x) * Math.min(1, dt * 9);
+    this.player.rotation.y += (targetX * 0.08 - this.player.rotation.y) * Math.min(1, dt * 8);
+
+    this.speed = clamp(this.speed + dt * 5.2, 24, this.maxSpeed);
+    this.distance += dt * this.speed * 2.8;
+    this.score = Math.floor(this.distance * 3.2);
 
     const speedEl = document.getElementById('speed-value');
     const scoreEl = document.getElementById('score-value');
-    if (speedEl) speedEl.textContent = String(Math.round(this.speed));
+    if (speedEl) speedEl.textContent = String(Math.round(this.speed * 5));
     if (scoreEl) scoreEl.textContent = String(this.score);
+
+    this.trackGroup.position.z += this.speed * dt * 6;
+    if (this.trackGroup.position.z > 18) this.trackGroup.position.z = 0;
 
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnObstacle();
-      this.spawnTimer = Math.max(0.55, 1.2 - this.speed / 440);
+      this.spawnTimer = Math.max(0.7, 1.7 - this.speed / 32);
+    }
+
+    this.pickupTimer -= dt;
+    if (this.pickupTimer <= 0) {
+      this.spawnPickup();
+      this.pickupTimer = 5.5;
     }
 
     for (let i = this.obstacles.length - 1; i >= 0; i -= 1) {
-      const obs = this.obstacles[i];
-      obs.z -= dt * (0.9 + this.speed / 200);
-      if (obs.z < -0.2) {
+      const item = this.obstacles[i];
+      item.mesh.position.z += this.speed * dt * 8;
+      item.mesh.rotation.y += dt * 1.4;
+      if (item.mesh.position.z > 15) {
+        this.scene.remove(item.mesh);
         this.obstacles.splice(i, 1);
         continue;
       }
 
-      const sameLane = Math.abs(obs.lane - this.lane) < 0.35;
-      if (obs.z < 0.32 && sameLane) {
-        if (obs.kind === 'boost') {
-          this.speed = clamp(this.speed + 55, 0, this.maxSpeed + 80);
-          this.score += 30;
-          AudioManager.beepSuccess();
-          this.obstacles.splice(i, 1);
-          continue;
-        }
+      if (Math.abs(item.mesh.position.z - this.player.position.z) < 1.8 && Math.abs(item.mesh.position.x - this.player.position.x) < 1.9) {
         this.triggerCrash();
         return;
       }
     }
-  }
 
-  drawSky(track) {
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    for (let i = this.pickups.length - 1; i >= 0; i -= 1) {
+      const item = this.pickups[i];
+      item.mesh.position.z += this.speed * dt * 8;
+      item.mesh.rotation.x += dt * 3;
+      item.mesh.rotation.y += dt * 3.5;
+      if (item.mesh.position.z > 15) {
+        this.scene.remove(item.mesh);
+        this.pickups.splice(i, 1);
+        continue;
+      }
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, track.sky);
-    gradient.addColorStop(1, '#04080f');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.fillStyle = 'rgba(255, 212, 118, 0.95)';
-    ctx.beginPath();
-    ctx.arc(w * 0.78, h * 0.18, 30, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (let i = 0; i < 30; i += 1) {
-      const x = (i * 91.2 + this.roadScroll * 0.7) % (w + 40) - 20;
-      const y = 26 + (i * 17) % (h * 0.4);
-      ctx.fillStyle = `rgba(255,255,255,${0.5 + (i % 5) * 0.08})`;
-      ctx.fillRect(x, y, 2, 2);
-    }
-
-    const skylineY = h * 0.46;
-    for (let i = 0; i < 12; i += 1) {
-      const x = i * (w / 12);
-      const buildingW = (w / 12) * 0.8;
-      const buildingH = 40 + ((i * 17) % 70);
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(9, 14, 27, 0.8)' : 'rgba(16, 22, 38, 0.9)';
-      ctx.fillRect(x, skylineY - buildingH, buildingW, buildingH);
-      for (let row = 0; row < 4; row += 1) {
-        for (let col = 0; col < 3; col += 1) {
-          if ((row + col + i) % 2 === 0) continue;
-          ctx.fillStyle = 'rgba(104, 240, 255, 0.35)';
-          ctx.fillRect(x + 6 + col * 10, skylineY - buildingH + 8 + row * 10, 6, 8);
-        }
+      if (Math.abs(item.mesh.position.z - this.player.position.z) < 1.8 && Math.abs(item.mesh.position.x - this.player.position.x) < 1.8) {
+        this.speed = clamp(this.speed + 12, 0, this.maxSpeed + 20);
+        this.score += 80;
+        AudioManager.beepSuccess();
+        this.scene.remove(item.mesh);
+        this.pickups.splice(i, 1);
       }
     }
-  }
 
-  drawRoad(track) {
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const horizon = h * 0.24;
-    const roadBottom = h * 0.98;
-    const leftTop = w * 0.22;
-    const rightTop = w * 0.78;
-    const leftBottom = w * 0.08;
-    const rightBottom = w * 0.92;
-
-    ctx.beginPath();
-    ctx.moveTo(leftTop, horizon);
-    ctx.lineTo(rightTop, horizon);
-    ctx.lineTo(rightBottom, roadBottom);
-    ctx.lineTo(leftBottom, roadBottom);
-    ctx.closePath();
-    ctx.fillStyle = track.road;
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(leftTop, horizon);
-    ctx.lineTo(leftBottom, roadBottom);
-    ctx.moveTo(rightTop, horizon);
-    ctx.lineTo(rightBottom, roadBottom);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    for (let i = 0; i < 16; i += 1) {
-      const t = i / 16;
-      const y1 = horizon + (roadBottom - horizon) * t;
-      const y2 = horizon + (roadBottom - horizon) * (t + 0.06);
-      const x1A = (leftTop * (1 - t)) + (leftBottom * t);
-      const x2A = (leftTop * (1 - (t + 0.06))) + (leftBottom * (t + 0.06));
-      const x1B = (rightTop * (1 - t)) + (rightBottom * t);
-      const x2B = (rightTop * (1 - (t + 0.06))) + (rightBottom * (t + 0.06));
-      ctx.beginPath();
-      ctx.moveTo(x1A, y1);
-      ctx.lineTo(x2A, y2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x1A, y1);
-      ctx.lineTo(x2A, y2);
-      ctx.stroke();
-    }
-
-    const dashCount = 18;
-    for (let i = 0; i < dashCount; i += 1) {
-      const t = (i / dashCount + (this.roadScroll * 0.0015)) % 1;
-      const y = horizon + (roadBottom - horizon) * t;
-      const laneW = 22 + (1 - t) * 42;
-      const xCenter = w / 2;
-      const x1 = xCenter - laneW / 2;
-      const x2 = xCenter + laneW / 2;
-      ctx.fillStyle = track.lane;
-      ctx.fillRect(x1, y, laneW, 6);
-      ctx.fillRect(xCenter - laneW / 2 - 60, y, 10, 6);
-      ctx.fillRect(xCenter + laneW / 2 + 50, y, 10, 6);
-    }
-  }
-
-  drawObstacle(obs) {
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const horizon = h * 0.24;
-    const roadBottom = h * 0.98;
-    const depth = clamp(1 - obs.z / 2.2, 0, 1);
-    const y = horizon + (roadBottom - horizon) * depth;
-    const x = w / 2 + obs.lane * (w * 0.19) * (1.1 - depth * 0.18);
-
-    if (obs.kind === 'boost') {
-      const size = 18 + depth * 18;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.PI / 4 + obs.phase * 0.6);
-      ctx.fillStyle = '#ffd166';
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = '#ffd166';
-      ctx.fillRect(-size * 0.7, -size * 0.7, size * 1.4, size * 1.4);
-      ctx.restore();
-      return;
-    }
-
-    const width = 26 + depth * 30;
-    const height = 46 + depth * 70;
-    const xPos = x - width / 2;
-    const yPos = y - height / 2;
-
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(xPos + 6, yPos + height * 0.85, width - 12, 12);
-
-    ctx.fillStyle = obs.color;
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = obs.color;
-    ctx.fillRect(xPos, yPos, width, height);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillRect(xPos + width * 0.22, yPos + 10, width * 0.18, height * 0.35);
-    ctx.fillRect(xPos + width * 0.6, yPos + 10, width * 0.18, height * 0.35);
-    ctx.fillStyle = 'rgba(5, 7, 18, 0.8)';
-    ctx.fillRect(xPos + width * 0.16, yPos + height * 0.8, width * 0.68, height * 0.15);
-    ctx.shadowBlur = 0;
-  }
-
-  drawPlayer() {
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const x = w / 2 + this.lane * (w * 0.18);
-    const y = h * 0.8;
-    const width = 52;
-    const height = 88;
-
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(x - width * 0.5 + 5, y + 54, width - 10, 12);
-
-    ctx.fillStyle = '#68f0ff';
-    ctx.shadowBlur = 24;
-    ctx.shadowColor = '#68f0ff';
-    ctx.fillRect(x - width / 2, y - height / 2, width, height);
-
-    ctx.fillStyle = '#101722';
-    ctx.fillRect(x - width * 0.22, y - height * 0.35, width * 0.44, height * 0.26);
-    ctx.fillStyle = '#dffaff';
-    ctx.fillRect(x - width * 0.25, y - height * 0.52, width * 0.17, 12);
-    ctx.fillRect(x + width * 0.08, y - height * 0.52, width * 0.17, 12);
-    ctx.fillStyle = '#ffd166';
-    ctx.fillRect(x - width * 0.13, y + height * 0.15, width * 0.26, 12);
-    ctx.fillRect(x - width * 0.13 + 24, y + height * 0.15, width * 0.26, 12);
-    ctx.shadowBlur = 0;
+    this.camera.position.x += (this.player.position.x * 0.7 - this.camera.position.x) * Math.min(1, dt * 4);
+    this.camera.position.y += (5.2 - this.camera.position.y) * Math.min(1, dt * 3);
+    this.camera.lookAt(this.player.position.x * 0.7, 1.2, -30);
   }
 
   render() {
-    const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const track = TRACKS[this.trackIndex];
-
-    this.drawSky(track);
-    this.drawRoad(track);
-
-    for (const obs of this.obstacles) {
-      this.drawObstacle(obs);
-    }
-
-    this.drawPlayer();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(0, h - 26, w, 26);
-    ctx.fillStyle = '#e8f6ff';
-    ctx.font = 'bold 12px Arial';
-    ctx.fillText('TRACK: ' + track.name.toUpperCase(), 18, h - 10);
-    ctx.fillText('BOOST: ' + Math.round(this.speed), w - 105, h - 10);
+    this.renderer.render(this.scene, this.camera);
   }
 }
